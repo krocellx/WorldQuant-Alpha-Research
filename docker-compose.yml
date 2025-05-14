@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: python -m src.main  # Adjust this to your entry point
+    environment:
+      - PYTHONPATH=/app
+    # Add any environment variables your app needs
+    # env_file:
+    #   - .env

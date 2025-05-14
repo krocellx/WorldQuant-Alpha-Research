@@ -1,0 +1,6 @@
+__pycache__/
+credentials.json
+*chromedriver*
+*.csv
+*.log
+draft/
