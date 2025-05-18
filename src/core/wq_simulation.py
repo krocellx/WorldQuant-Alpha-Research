@@ -485,6 +485,7 @@ class WQSimulation(WQSession):
         self.processed_simulations.append(simulation)
         self.rows_failed.append(row)  # Add to in-memory results
         log.warning(f'{thread} -- Simulation FAILED for {simulation.get('idea_id', '')}: {simulation["code"][:20]} – added to CSV')
+        return dict(zip(self.RESULT_CSV_HEADER, row))
 
     def _write_result_row(self, row):
         with self.write_lock:
@@ -511,7 +512,10 @@ class WQSimulation(WQSession):
             if check['name'] == 'CONCENTRATED_WEIGHT':
                 weight_check = check['result']
             elif check['name'] == 'LOW_SUB_UNIVERSE_SHARPE':
-                subsharpe = check['value']
+                if check['result'] == 'ERROR':
+                    subsharpe = 'ERROR'
+                else:
+                    subsharpe = check['value']
 
         return passed, failed, weight_check, subsharpe
 
