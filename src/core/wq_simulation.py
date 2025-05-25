@@ -4,7 +4,6 @@ import os
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
 from threading import Lock, current_thread
 from urllib.parse import urljoin
 
@@ -17,22 +16,7 @@ from src.core.wq_session_core import WQSession
 from src.utilities.logger import log
 
 
-class RequestRateLimiter:
-    """
-    A simple rate limiter to control the frequency of API requests.
-    """
-    def __init__(self, min_interval_sec=0.8):
-        self.lock = threading.Lock()
-        self.min_interval = min_interval_sec
-        self.last_call = 0
 
-    def wait(self):
-        with self.lock:
-            now = time.time()
-            elapsed = now - self.last_call
-            if elapsed < self.min_interval:
-                time.sleep(self.min_interval - elapsed)
-            self.last_call = time.time()
 
 
 class WQSimulation(WQSession):
@@ -47,7 +31,7 @@ class WQSimulation(WQSession):
     RESULT_CSV_HEADER = [
             'idea_id', 'status', 'passed_checks', 'failed', 'delay', 'region', 'neutralization', 'decay', 'truncation',
             'sharpe', 'fitness', 'turnover', 'weight', 'subsharpe', 'correlation',
-            'universe', 'link', 'code'
+            'universe', 'link', 'code', 'id'
         ]
 
     def __init__(self, json_fn='credentials.json'):
@@ -65,15 +49,8 @@ class WQSimulation(WQSession):
         self._unflushed_row_count = 0
         self._flush_interval = 5
 
-        self.login_expired = False
-
-        self.rate_limiter = RequestRateLimiter(min_interval_sec=5.0)
-
         self.write_lock = Lock()
-        self.login_lock = Lock()
-        self.rate_limit_lock = Lock()
-        self.last_429_time = 0
-        self.cooldown_seconds = 60
+
 
     def run_simulation_from_tracker(self, tracker_path='alpha_tracking.csv'):
         """
@@ -203,6 +180,8 @@ class WQSimulation(WQSession):
         # Extract parameters from simulation dictionary
         params = self._extract_simulation_params(simulation)
         alpha_code = params.pop('code').replace('"', '')
+        alpha_code = alpha_code.replace(r"\r", "")
+        alpha_code = alpha_code.replace(r"\n", "")
 
         log.info(f"{thread} -- Simulating alpha: {alpha_code[:50]}...")
 
@@ -446,6 +425,7 @@ class WQSimulation(WQSession):
                 params['universe'],
                 platform_url,
                 simulation['code'],
+                alpha_link
 
             ]
 
@@ -478,7 +458,8 @@ class WQSimulation(WQSession):
             0, 0, 0, 'FAIL', 0, -1,
             params['universe'],
             'FAILED',
-            simulation['code']
+            simulation['code'],
+            ''
         ]
 
         self._write_result_row(row) # Write to CSV
@@ -549,6 +530,7 @@ class WQSimulation(WQSession):
                 df.loc[idx, 'subsharpe'] = result_row.get('subsharpe', 0)
                 df.loc[idx, 'correlation'] = result_row.get('correlation', 0)
                 df.loc[idx, 'link'] = result_row.get('link', '')
+                df.loc[idx, 'id'] = result_row.get('id', '')
 
                 df.to_csv(tracker_path, index=False)
                 log.info(f"Updated tracker for {idea_id}")
