@@ -1,0 +1,2 @@
+idea_id,description,hypothesis,category,template,operators,data,creation_date,status,note_1,note_2,manual_reviewed,submitted,last_updated,code,neutralization,decay,truncation,delay,universe,region,pasteurization,nanHandling,passed_checks,failed,sharpe,fitness,turnover,weight_check,subsharpe,correlation,link,id
+1,test,test,test,"""ts_mean({data_field},{window})""","""ts_mean()""",close,2025-05-09,pending,nan,nan,False,False,,"""ts_mean(close,5)""",MARKET,4,0.08,1,TOP3000,USA,ON,OFF,,,,,,,,,,
