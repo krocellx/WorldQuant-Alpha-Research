@@ -1,6 +1,8 @@
 from pandas import json_normalize
 import pandas as pd
 import time
+import os
+from urllib.parse import urljoin
 
 from src.core.wq_session_core import WQSession
 from src.utilities.parameters import CREDENTIALS_FILE
@@ -54,7 +56,7 @@ class WQAlpha(WQSession):
 
         return df_alpha
 
-    def get_submited_alpha_pnl(self, df_alpha=None):
+    def get_submited_alpha_pnl(self, alpha_pnl_dir, df_alpha=None):
         if df_alpha is None and self.df_alpha is None:
             return None
         if df_alpha is None:
@@ -65,7 +67,13 @@ class WQAlpha(WQSession):
         alpha_id = df_alpha.id
 
         for i in alpha_id:
-            df_pnl = self.get_single_alpha_pnl(i)
+            log.info(f'Extracting pnl for alpha {i}')
+            alpha_pnl_path = os.path.join(alpha_pnl_dir, f'{i}.csv')
+            if os.path.exists(alpha_pnl_path):
+                df_pnl = pd.read_csv(alpha_pnl_path)
+            else:
+                df_pnl = self.get_single_alpha_pnl(i)
+                df_pnl.to_csv(alpha_pnl_path, index=False)
             if df_pnl is not None:
                 ls_pnl.append(df_pnl)
 
@@ -142,13 +150,16 @@ class WQAlpha(WQSession):
         new_alpha_id = df_new['alpha_id'].iloc[0]
         new_alpha_series = df_new.set_index('date')['pnl'].rename(new_alpha_id)
 
+        # Ensure the new alpha is not in the submitted alphas
+        df_submitted_wide = df_submitted_wide[[col for col in df_submitted_wide.columns if col != new_alpha_id]]
+
         # Align on dates to handle missing dates
         aligned = df_submitted_wide.join(new_alpha_series, how='inner')
         cutoff_date = pd.to_datetime(aligned.index[-1]) - pd.DateOffset(years=4)
         aligned_reduced = aligned[pd.to_datetime(aligned.index) >= cutoff_date].copy()
 
         # Calculate the correlation between the new alpha and each existing one
-        correlations = aligned_reduced.corr()[new_alpha_id].drop(new_alpha_id)
+        correlations = aligned_reduced.corr()[new_alpha_id].drop([new_alpha_id])
 
         # Show the result
         return correlations
@@ -178,6 +189,62 @@ class WQAlpha(WQSession):
         else:
             submittable = 'Cannot submit due to error'
         return f'{improve_performance}; {submittable}'
+
+    def corr_analysis(self, df_submitted_pnl, df_new_pnl, df_submitted_details, df_new_details=None):
+        """
+        Analyze the correlation of a new alpha with submitted alphas and find the one with highest correlation.
+        :param df_submitted_pnl: DataFrame containing pnl of submitted alphas
+        :param df_new_pnl: DataFrame containing pnl of the new alpha
+        :param df_submitted_details: DataFrame containing details of submitted alphas
+        :return: None, but prints the alpha with highest correlation and its Sharpe ratio
+        """
+        correlations = self.cal_self_corr(df_submitted_pnl, df_new_pnl)
+
+        highest_corr = correlations.sort_values(ascending=False).iloc[0]
+        over_threshold_alpha = correlations[correlations>0.7].copy()
+        if len(over_threshold_alpha) == 0:
+            highest_corr_alpha_id = correlations.sort_values(ascending=False).index[0]
+            highest_corr_alpha_sharpe = df_submitted_details[
+                df_submitted_details['id'] == highest_corr_alpha_id
+            ]['is.sharpe'].iloc[0]
+        else:
+            over_threshold_alpha_sharpe = df_submitted_details[
+                df_submitted_details['id'].isin(over_threshold_alpha.index)
+            ].copy()
+            highest_corr_alpha_sharpe = over_threshold_alpha_sharpe['is.sharpe'].max()
+            highest_corr_alpha_id = over_threshold_alpha_sharpe[
+                over_threshold_alpha_sharpe['is.sharpe']==highest_corr_alpha_sharpe
+            ]['id'].iloc[0]
+
+        max_retries = 5
+        while max_retries > 0:
+            try:
+                if df_new_details is None:
+                    log.info(f'No new alpha details provided, fetching details for {highest_corr_alpha_id}')
+                    url = urljoin(self.API_BASE_URL, f"alphas/{highest_corr_alpha_id}")
+                    response = self.request_with_retry(self.get, url)
+                    sharpe = response.json()['is']['sharpe']
+                else:
+                    # Assume dataframe has 'id' and 'sharpe' columns
+                    log.info(f'Fetching sharpe for {highest_corr_alpha_id} from provided details')
+                    sharpe = df_new_details[df_new_details['id'] == df_new_pnl['alpha_id'].iloc[0]]['sharpe'].iloc[0]
+                # exit loop if successful
+                log.info(f'Highest correlation: {highest_corr}, Alpha ID: {highest_corr_alpha_id}, Sharpe: {sharpe}')
+                break
+            except Exception as e:
+                log.error(f"Error fetching alpha details for {highest_corr_alpha_id}: {e}")
+                sharpe = 0
+            max_retries -= 1
+            time.sleep(5)
+
+        if highest_corr > 0.7 and sharpe / highest_corr_alpha_sharpe > 1.1:
+            corr_check = True
+        elif highest_corr < 0.7:
+            corr_check = True
+        else:
+            corr_check = False
+
+        return f'{corr_check}:{highest_corr}-{highest_corr_alpha_id}-{highest_corr_alpha_sharpe}'
 
 if __name__ == '__main__':
     DATA_SET = WQAlpha()

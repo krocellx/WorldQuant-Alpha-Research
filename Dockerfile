@@ -25,3 +25,6 @@ COPY . .
 
 # Set Python path
 ENV PYTHONPATH="/app:${PYTHONPATH}"
+
+# Expose Streamlit port
+EXPOSE 8501

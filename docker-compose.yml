@@ -1,7 +1,7 @@
 version: '3.8'  # Specifies the Docker Compose file format version
 
 services:  # Defines the container services section
-  app:  # Name of your service
+  simulation:  # Name of your service
     build:  # Build configuration
       context: .  # Use current directory as build context
       dockerfile: Dockerfile  # Use this specific Dockerfile
@@ -13,3 +13,16 @@ services:  # Defines the container services section
       - PYTHONPATH=/app  # Add /app to Python's module search path
     # env_file:  # Optional: load environment variables from file
     #   - .env
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ./:/app:rw
+      - /e/OneDrive/DataStorage/iqc_alpha:/app/alpha_onedrive:rw
+    working_dir: /app
+    command: python -m main_ui
+    environment:
+      - PYTHONPATH=/app
+    ports:
+      - "8501:8501"

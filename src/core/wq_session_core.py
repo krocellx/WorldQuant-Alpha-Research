@@ -26,6 +26,10 @@ class RequestRateLimiter:
             self.last_call = time.time()
 
 class WQSession(requests.Session):
+
+    API_BASE_URL = "https://api.worldquantbrain.com"
+    PLATFORM_URL = "https://platform.worldquantbrain.com"
+
     def __init__(self, json_fn='credentials.json'):
         super().__init__()
         # for handler in logging.root.handlers:
@@ -162,3 +166,26 @@ class WQSession(requests.Session):
                 time.sleep(sleep_time)
 
         return None
+
+
+    def get_alpha_details(self, alpha_id):
+        """
+        Get details of a specific alpha by its ID.
+
+        :param alpha_id: The ID of the alpha to retrieve details for
+        :return: JSON response with alpha details or None if request fails
+        """
+        thread = current_thread().name
+        url = f'https://api.worldquantbrain.com/alphas/{alpha_id}'
+
+        response = self.request_with_retry(self.get, url)
+
+        if response is None:
+            log.error(f"{thread} -- Failed to retrieve alpha details for {alpha_id}")
+            return None
+
+        try:
+            return response.json()
+        except ValueError as e:
+            log.error(f"{thread} -- Error parsing JSON response for alpha {alpha_id}: {str(e)}")
+            return None

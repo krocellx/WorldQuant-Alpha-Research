@@ -25,9 +25,6 @@ class WQSimulation(WQSession):
     Handles simulation submission, monitoring, and result processing.
     """
 
-    API_BASE_URL = "https://api.worldquantbrain.com"
-    PLATFORM_URL = "https://platform.worldquantbrain.com"
-
     RESULT_CSV_HEADER = [
             'idea_id', 'status', 'passed_checks', 'failed', 'delay', 'region', 'neutralization', 'decay', 'truncation',
             'sharpe', 'fitness', 'turnover', 'weight', 'subsharpe', 'correlation',
@@ -239,7 +236,7 @@ class WQSimulation(WQSession):
         response = self.request_with_retry(self.post, url, json=payload)
 
         if not response or self.login_expired:
-            log.error(f'{thread} -- Failed to submit simulation request: {response.status_code}')
+            log.error(f'{thread} -- Failed to submit simulation request: {response}; Login expired: {self.login_expired}')
             return None
 
         try:

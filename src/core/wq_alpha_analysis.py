@@ -1,7 +1,10 @@
+import os.path
 
 import pandas as pd
 
 from src.utilities.logger import log
+
+from src.core.wq_result_extract import WQAlpha
 
 class AlphaTracker:
     idea_cols = ['idea_id', 'description', 'hypothesis', 'category', 'template', 'operators', 'data', 'creation_date',
@@ -70,7 +73,7 @@ class AlphaTracker:
             self.df = pd.read_csv(self.tracker_file)
 
             # Create backup of the original tracker file
-            backup_file = self.tracker_file.replace('.csv', '_backup.csv')
+            backup_file = self.tracker_file.replace('.csv', '.csv.backup')
             self.df.to_csv(backup_file, index=False)
             print(f"Tracker file {self.tracker_file} loaded successfully.")
 
@@ -97,7 +100,7 @@ class AlphaTracker:
             self.df = self.df[self.all_cols]
 
         except FileNotFoundError:
-            print(f"Tracker file {self.tracker_file} not found. A new one will be created.")
+            print(f"Tracker file {self.tracker_file} not found.")
         except pd.errors.EmptyDataError:
             print("Tracker file is currently empty or being written.")
         except pd.errors.ParserError:
@@ -131,9 +134,41 @@ class AlphaTracker:
 
             self.df.loc[self.df['idea_id'] == idea_id, 'last_updated'] = pd.to_datetime('now')
 
-            self.save_tracker()
         else:
             print(f"Idea ID {idea_id} not found in the tracker.")
+
+    def update_idea_batch(self, idea_id, field_updates):
+        """
+        Update multiple fields for a single idea_id at once.
+
+        Args:
+            idea_id (str): The idea ID to update
+            field_updates (dict): Dictionary of {field_name: new_value}
+
+        Returns:
+            bool: True if update succeeded, False otherwise
+        """
+        # Convert idea_id to string for consistent comparison
+        idea_id = str(idea_id)
+
+        # Find the row index first (more efficient)
+        mask = self.df['idea_id'] == idea_id
+        if not mask.any():
+            print(f"Idea ID {idea_id} not found in the tracker.")
+            return False
+
+        # Get only valid columns that exist in the DataFrame
+        valid_fields = {k: v for k, v in field_updates.items() if k in self.df.columns}
+        if not valid_fields:
+            print("No valid fields to update.")
+            return False
+
+        # Update all fields at once with a single loc operation
+        self.df.loc[mask, list(valid_fields.keys())] = list(valid_fields.values())
+
+        # Update timestamp
+        self.df.loc[mask, 'last_updated'] = pd.to_datetime('now')
+        return True
 
     def load_parameters(self):
         # Load parameters from the tracker file
@@ -163,6 +198,106 @@ class AlphaTracker:
             simulation_params.append(sim_dict)
 
         return simulation_params
+
+    def corr_check(self, df_alpha_pnl_dir, df_submitted_pnl=None, df_submitted_details=None, sharpe_threshold=1.3, submitted_alpha_details_file_path=None):
+        """
+        Check correlation of alphas in the tracker.
+        This is a placeholder for the actual correlation check logic.
+        """
+        log.info(f"Starting correlation check from alpha pnl dir: {df_alpha_pnl_dir}...")
+        in_scope_alphas = self.df[(self.df['sharpe'] >= sharpe_threshold)
+                                  # & (self.df['correlation'] == -1.0)
+                                  & (self.df['submitted'] == False)].copy()
+        if in_scope_alphas.empty:
+            log.info("No alphas in scope for correlation check.")
+            return True
+
+        result_obj = WQAlpha()
+
+        if df_submitted_details is None:
+            df_submitted_details = result_obj.get_submitted_alphas(submitted_alpha_details_file_path)
+
+        if df_submitted_pnl is None:
+            df_submitted_pnl = result_obj.get_submited_alpha_pnl(df_alpha_pnl_dir, df_submitted_details)
+
+        for _, row in in_scope_alphas.iterrows():
+            idea_id = row['idea_id']
+            code = row['code']
+            alpha_id = row['id']
+            log.info(f"Checking correlation for idea {idea_id} with code: {code[:50]}...")
+
+            alpha_pnl_file_path = os.path.join(df_alpha_pnl_dir, f"{alpha_id}.csv")
+
+            if os.path.isfile(alpha_pnl_file_path):
+                log.info(f'Loading existing Alpha PnL file for {alpha_id} from {alpha_pnl_file_path}...')
+                new_alpha_pnl = pd.read_csv(alpha_pnl_file_path)
+            else:
+                log.info(f'Alpha PnL file for {alpha_id} not found ({alpha_pnl_file_path}). Generating new PnL data...')
+                new_alpha_pnl = result_obj.get_single_alpha_pnl(alpha_id)
+                new_alpha_pnl.to_csv(alpha_pnl_file_path, index=False)
+
+            corr_result = result_obj.corr_analysis(df_submitted_pnl,
+                                                   new_alpha_pnl,
+                                                   df_submitted_details,
+                                                   row.to_frame().T[['sharpe', 'id']])
+
+            self.update_idea(idea_id, 'correlation', corr_result)
+            self.save_tracker()
+
+        return True
+
+    def check_correlation_between_alphas(self, alpha_ids=None, idea_ids=None, df_alpha_pnl_dir=None):
+        """
+        Check correlation between specified alphas.
+
+        Args:
+            alpha_ids (list): List of alpha IDs to check correlation between
+            idea_ids (list): List of idea IDs to check correlation between (alternative to alpha_ids)
+            df_alpha_pnl_dir (str): Directory containing alpha PnL CSV files
+
+        Returns:
+            pd.DataFrame: Correlation matrix between the specified alphas
+        """
+        if df_alpha_pnl_dir is None:
+            raise ValueError("Alpha PnL directory must be specified")
+
+        result_obj = WQAlpha()
+
+        # Get alpha IDs from idea IDs if provided
+        if alpha_ids is None and idea_ids is not None:
+            alpha_ids = self.df[self.df['idea_id'].isin(idea_ids)]['id'].tolist()
+
+        if not alpha_ids:
+            log.info("No alphas specified for correlation check")
+            return pd.DataFrame()
+
+        # Load PnL data for each alpha
+        pnl_data = {}
+        for alpha_id in alpha_ids:
+            alpha_pnl_file_path = os.path.join(df_alpha_pnl_dir, f"{alpha_id}.csv")
+
+            if os.path.isfile(alpha_pnl_file_path):
+                log.info(f'Loading Alpha PnL file for {alpha_id}...')
+                alpha_pnl = pd.read_csv(alpha_pnl_file_path)
+                pnl_data[alpha_id] = alpha_pnl
+            else:
+                log.info(f'Alpha PnL file for {alpha_id} not found. Generating new PnL data...')
+                alpha_pnl = result_obj.get_single_alpha_pnl(alpha_id)
+                alpha_pnl.to_csv(alpha_pnl_file_path, index=False)
+                pnl_data[alpha_id] = alpha_pnl
+
+        # Calculate correlation matrix
+        # Extract the 'pnl' column from each DataFrame and create a new DataFrame with alpha_ids as column names
+        pnl_df = pd.DataFrame()
+        for alpha_id, df in pnl_data.items():
+            if 'pnl' in df.columns:
+                pnl_df[alpha_id] = df['pnl']
+
+        # Calculate correlation matrix
+        corr_matrix = pnl_df.corr()
+
+        return corr_matrix
+
 
 if __name__ == "__main__":
     TRACKER = AlphaTracker(tracker_file=r'alpha\alpha_tracking_sample.csv')
