@@ -7,6 +7,10 @@ services:  # Defines the container services section
       dockerfile: Dockerfile  # Use this specific Dockerfile
     volumes:
       - ./:/app:rw  # Mount local directory to /app in container with read-write permissions
+#      - /Users/zhishengxie/Library/CloudStorage/OneDrive-Personal/DataStorage/iqc_alpha:/app/alpha_onedrive:rw
+#      - /Users/zhishengxie/Library/CloudStorage/OneDrive-Personal/DataStorage/iqc_alpha/pnl:/app/alpha_onedrive/pnl:rw
+      - /e/OneDrive/DataStorage/iqc_alpha:/app/alpha_onedrive:rw
+      - /e/OneDrive/DataStorage/iqc_alpha/pnl:/app/alpha_onedrive/pnl:rw
     working_dir: /app  # Set working directory inside container
     command: python -m main_simulation  # Command to run when container starts
     environment:  # Environment variables
@@ -19,6 +23,7 @@ services:  # Defines the container services section
       dockerfile: Dockerfile
     volumes:
       - ./:/app:rw
+#      - /Users/zhishengxie/Library/CloudStorage/OneDrive-Personal/DataStorage/iqc_alpha:/app/alpha_onedrive:rw
       - /e/OneDrive/DataStorage/iqc_alpha:/app/alpha_onedrive:rw
     working_dir: /app
     command: python -m main_ui

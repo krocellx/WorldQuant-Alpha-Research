@@ -4,3 +4,4 @@ credentials.json
 *.csv
 *.log
 draft/
+.env.local

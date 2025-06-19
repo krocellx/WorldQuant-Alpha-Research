@@ -9,7 +9,7 @@ from src.core.wq_alpha_analysis import AlphaTracker
 load_dotenv(dotenv_path=os.path.join(BASE_DIR, ".env.local"))  # Load environment variables
 
 class AlphaTrackerConfig:
-    ALPHA_DIR = os.getenv("ALPHA_DIR", os.path.join(BASE_DIR, 'iqc_alpha'))  # Default path if not set in .env
+    ALPHA_DIR = os.getenv("ALPHA_DIR", os.path.join(BASE_DIR, 'alpha_onedrive'))  # Default path if not set in .env
     EDIT_COLS = ['link', 'passed_checks', 'failed', 'sharpe', 'fitness', 'turnover', 'weight_check', 'subsharpe',
                  'correlation', 'code', 'manual_reviewed', 'submitted', 'note_1', 'note_2', 'idea_id']
 
@@ -42,7 +42,7 @@ class AlphaDataHandler:
 
     def apply_filters(self, df, min_sharpe, hide_reviewed):
         filtered_df = df.copy()
-        filtered_df = filtered_df[filtered_df["sharpe"] >= min_sharpe]
+        filtered_df = filtered_df[abs(filtered_df["sharpe"]) >= min_sharpe]
         if hide_reviewed:
             filtered_df = filtered_df[filtered_df["manual_reviewed"] == False]
         return filtered_df.sort_values(by='sharpe', ascending=False).reset_index(drop=True)
@@ -70,7 +70,7 @@ class AlphaTrackerUI:
         st.sidebar.subheader("View Filters")
 
         min_sharpe = st.sidebar.slider("Minimum Sharpe",
-                                       min_value=-5.0,
+                                       min_value=0.0,
                                        max_value=5.0,
                                        value=self.config.DEFAULT_MIN_SHARPE,
                                        step=0.1)

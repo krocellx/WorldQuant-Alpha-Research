@@ -6,6 +6,7 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock, current_thread
 from urllib.parse import urljoin
+from dotenv import load_dotenv
 
 # Third-party imports
 import pandas as pd
@@ -14,9 +15,10 @@ from filelock import FileLock
 # Local application imports
 from src.core.wq_session_core import WQSession
 from src.utilities.logger import log
+from src.utilities.parameters import BASE_DIR
 
-
-
+load_dotenv(dotenv_path=os.path.join(BASE_DIR, ".env.local"))
+ALPHA_PNL_DIR = os.getenv("ALPHA_PNL_DIR", os.path.join(BASE_DIR, 'alpha_onedrive'))
 
 
 class WQSimulation(WQSession):
@@ -432,6 +434,14 @@ class WQSimulation(WQSession):
             self.results_data.append(row)  # Add to in-memory results
             log.info(f'{thread} -- Result added to CSV!')
 
+            # extract alpha pnl if sharp >= 1.25
+            if data['is']['sharpe'] >= 1.25:
+                log.info("Logging alpha PnL for alpha with sharpe >= 1.25")
+                pnl_df = self.get_single_alpha_pnl(alpha_link)
+                if len(pnl_df.index)>0:
+                    alpha_pnl_file_path = os.path.join(ALPHA_PNL_DIR, f"{alpha_link}.csv")
+                    pnl_df.to_csv(alpha_pnl_file_path, index=False)
+
             return dict(zip(self.RESULT_CSV_HEADER, row))
 
         except Exception as e:
@@ -535,3 +545,39 @@ class WQSimulation(WQSession):
                 log.warning(f"Could not find tracker entry for idea_id={idea_id}")
 
         log.info(f"{thread} -- Successfully updated tracker entry for idea_id={idea_id}")
+
+    def get_single_alpha_pnl(self, alpha_id):
+
+        url = f'{self.API_BASE_URL}/alphas/{alpha_id}/recordsets/daily-pnl'
+
+        pnl_df = self.get_single_alpha_result(url, alpha_id)
+
+        return pnl_df
+
+    def get_single_alpha_result(self, url, alpha_id):
+        max_retries = 10
+        while max_retries > 0:
+            try:
+                r = self.request_with_retry(self.get, url)
+                if r.status_code != 200:
+                    log.error(f"Error fetching data: {r.status_code}")
+                    return None
+                data = r.json()
+
+                # Check if the response contains 'schema'
+                if 'schema' not in data:
+                    log.error(f"Error fetching data: {data}")
+
+                if 'records' not in data:
+                    log.error(f"Error fetching data: {data}")
+
+                pnl_df = pd.DataFrame(data['records'])
+                pnl_cols = [ r['name'] for r in data['schema']['properties']]
+                pnl_df.columns = pnl_cols
+                pnl_df['alpha_id'] = alpha_id
+                return pnl_df
+            except Exception as e:
+                log.error(f"Error fetching data: {url} {e}")
+            max_retries -= 1
+            time.sleep(5)
+        return None

@@ -298,7 +298,59 @@ class AlphaTracker:
 
         return corr_matrix
 
+    def performance_check(self, sharpe_threshold=1.3, corr_verify=True):
+        """
+        Check performance of alphas in the tracker.
+        This is a placeholder for the actual performance check logic.
+        """
+        log.info("Starting performance check...")
+
+        in_scope_alphas = self.df[
+            (self.df['sharpe'] >= sharpe_threshold) &
+            (self.df['submitted'] == False)].copy()
+
+        if corr_verify:
+            log.info("Filter alphas with correlation check passed...")
+            in_scope_alphas = in_scope_alphas[
+                in_scope_alphas['correlation'].str.contains('True')]
+
+        if in_scope_alphas.empty:
+            log.info("No alphas in scope for performance check.")
+            return True
+
+        result_obj = WQAlpha()
+
+        for _, row in in_scope_alphas.iterrows():
+            idea_id = row['idea_id']
+            code = row['code']
+            alpha_id = row['id']
+            log.info(f"Checking performance for idea {idea_id} with code: {code[:50]}...")
+
+            perf_url = f'https://api.worldquantbrain.com/competitions/IQC2025S1/alphas/{alpha_id}/before-and-after-performance'
+            perf_result = result_obj.get_single_alpha_performance_impact(
+                url=perf_url,alpha_id=alpha_id)
+            # Perform performance checks here
+            # For example, you can check if the alpha meets certain criteria
+            # and update the 'status' or other fields accordingly
+
+            # Placeholder for actual performance check logic
+            result_text = f'Pref: {perf_result['performance_impact'][0]};'
+            self.update_idea(idea_id, 'note_2', result_text)
+            self.save_tracker()
+
+        return True
+
+
 
 if __name__ == "__main__":
-    TRACKER = AlphaTracker(tracker_file=r'alpha\alpha_tracking_sample.csv')
-    TRACKER.save_tracker()
+    TRACKER = AlphaTracker(tracker_file=r'E:\OneDrive\DataStorage\iqc_alpha\ts_mean_round_02.csv')
+    # TRACKER.save_tracker()
+    DF_SUBMITTED_PNL = pd.read_csv(r'E:\OneDrive\DataStorage\iqc_alpha\alpha_pnl.csv')
+    DF_SUBMITTED_DETAILS = pd.read_csv(r'E:\OneDrive\DataStorage\iqc_alpha\submitted_alphas.csv')
+    TRACKER.corr_check(df_alpha_pnl_dir=r'E:\OneDrive\DataStorage\iqc_alpha\pnl',
+                       # df_submitted_pnl=DF_SUBMITTED_PNL,
+                       df_submitted_details=DF_SUBMITTED_DETAILS, # DF_SUBMITTED_DETAILS,
+                       submitted_alpha_details_file_path=r'E:\OneDrive\DataStorage\iqc_alpha\submitted_alphas.csv'
+                       )
+    # TRACKER.check_correlation_between_alphas(['29nR5Q5', '98AajNx', 'px1n0Xb', 'ENrrKVJ', 'xVmMqVb'], df_alpha_pnl_dir=r'E:\OneDrive\DataStorage\iqc_alpha\pnl')
+    print(1)

@@ -92,7 +92,7 @@ class WQAlpha(WQSession):
 
         return pnl_df
     def get_single_alpha_result(self, url, alpha_id):
-        max_retries = 5
+        max_retries = 10
 
         while max_retries > 0:
             try:
@@ -121,7 +121,7 @@ class WQAlpha(WQSession):
         return None
 
     def get_single_alpha_performance_impact(self, url, alpha_id):
-        max_retries = 5
+        max_retries = 10
 
         while max_retries > 0:
             try:
@@ -248,7 +248,7 @@ class WQAlpha(WQSession):
 
 if __name__ == '__main__':
     DATA_SET = WQAlpha()
-    DATA_SET.get_alpha_corr_and_performance('xxxxx')
+    # DATA_SET.get_alpha_corr_and_performance('xxxxx')
     # result = DATA_SET.get_submitted_alphas('submitted_alphas.csv')
     # pnl = DATA_SET.get_submited_alpha_pnl(pd.read_csv('submitted_alphas.csv'))
     # pnl.to_csv('alpha_pnl.csv', index=False)
