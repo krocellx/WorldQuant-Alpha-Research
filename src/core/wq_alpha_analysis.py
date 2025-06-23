@@ -8,7 +8,8 @@ from src.core.wq_result_extract import WQAlpha
 
 class AlphaTracker:
     idea_cols = ['idea_id', 'description', 'hypothesis', 'category', 'template', 'operators', 'data', 'creation_date',
-                 'status', 'note_1', 'note_2', 'manual_reviewed', 'submitted', 'last_updated']
+                 'status', 'note_1', 'note_2', 'parsed_formula', 'tier_0', 'tier_1', 'tier_2', 'tier_3',
+                 'manual_reviewed', 'submitted', 'last_updated']
     simulation_cols = ['code', 'neutralization', 'decay', 'truncation', 'delay', 'universe', 'region',
                        'pasteurization', 'nanHandling']
     result_cols = ['passed_checks', 'failed', 'sharpe', 'fitness', 'turnover', 'weight_check', 'subsharpe',
@@ -27,6 +28,11 @@ class AlphaTracker:
         'status': 'str',
         'note_1': 'str',
         'note_2': 'str',
+        'parsed_formula': 'str',
+        'tier_0': 'str',
+        'tier_1': 'str',
+        'tier_2': 'str',
+        'tier_3': 'str',
         'manual_reviewed': 'bool',
         'submitted': 'bool',
         'last_updated': 'datetime64[ns]',
@@ -199,7 +205,11 @@ class AlphaTracker:
 
         return simulation_params
 
-    def corr_check(self, df_alpha_pnl_dir, df_submitted_pnl=None, df_submitted_details=None, sharpe_threshold=1.3, submitted_alpha_details_file_path=None):
+    def corr_check(self, df_alpha_pnl_dir, df_submitted_pnl=None, df_submitted_details=None,
+                   submitted_alpha_details_file_path=None,
+                   sharpe_threshold=1.3, submitted_flag=False, self_submitable_flag=False, override_flag=True,
+                   turnover_threshold=None
+                   ):
         """
         Check correlation of alphas in the tracker.
         This is a placeholder for the actual correlation check logic.
@@ -207,7 +217,17 @@ class AlphaTracker:
         log.info(f"Starting correlation check from alpha pnl dir: {df_alpha_pnl_dir}...")
         in_scope_alphas = self.df[(self.df['sharpe'] >= sharpe_threshold)
                                   # & (self.df['correlation'] == -1.0)
-                                  & (self.df['submitted'] == False)].copy()
+                                  & (self.df['submitted'] == submitted_flag)].copy()
+
+        if self_submitable_flag:
+            in_scope_alphas = in_scope_alphas[in_scope_alphas['passed_checks'] == 7]
+
+        if not override_flag:
+            in_scope_alphas = in_scope_alphas[in_scope_alphas['correlation'] == '-1.0']
+
+        if turnover_threshold is not None:
+            in_scope_alphas = in_scope_alphas[in_scope_alphas['turnover'] <= turnover_threshold]
+
         if in_scope_alphas.empty:
             log.info("No alphas in scope for correlation check.")
             return True
@@ -288,17 +308,18 @@ class AlphaTracker:
 
         # Calculate correlation matrix
         # Extract the 'pnl' column from each DataFrame and create a new DataFrame with alpha_ids as column names
-        pnl_df = pd.DataFrame()
-        for alpha_id, df in pnl_data.items():
-            if 'pnl' in df.columns:
-                pnl_df[alpha_id] = df['pnl']
+        pnl_df = pd.concat(
+            [df['pnl'].rename(alpha_id) for alpha_id, df in pnl_data.items() if 'pnl' in df.columns],
+            axis=1
+        )
 
         # Calculate correlation matrix
         corr_matrix = pnl_df.corr()
 
-        return corr_matrix
+        return corr_matrix, pnl_df
 
-    def performance_check(self, sharpe_threshold=1.3, corr_verify=True):
+    def performance_check(self, sharpe_threshold=1.25, corr_verify=True, override_flag=True,
+                          short_by_sharpe=True, self_submitable_flag=False):
         """
         Check performance of alphas in the tracker.
         This is a placeholder for the actual performance check logic.
@@ -312,11 +333,24 @@ class AlphaTracker:
         if corr_verify:
             log.info("Filter alphas with correlation check passed...")
             in_scope_alphas = in_scope_alphas[
-                in_scope_alphas['correlation'].str.contains('True')]
+                in_scope_alphas['correlation'].astype(str).str.contains('True')]
+
+        if not override_flag:
+            log.info("Filter out alpha with existing performance check...")
+            in_scope_alphas = in_scope_alphas[in_scope_alphas['note_2'] != '']
 
         if in_scope_alphas.empty:
             log.info("No alphas in scope for performance check.")
             return True
+
+        if self_submitable_flag:
+            log.info("Filtering alphas that are self-submitable...")
+            in_scope_alphas = in_scope_alphas[in_scope_alphas['passed_checks'] == 7]
+
+        if short_by_sharpe:
+            log.info("Sorting alphas by sharpe ratio...")
+            in_scope_alphas = in_scope_alphas.sort_values(by='sharpe', ascending=False)
+
 
         result_obj = WQAlpha()
 
@@ -340,6 +374,18 @@ class AlphaTracker:
 
         return True
 
+    def get_alpha_pnl(self, alpha_id, df_alpha_pnl_dir):
+        """
+        Get the PnL DataFrame for a specific alpha ID.
+        """
+        alpha_pnl_file_path = os.path.join(df_alpha_pnl_dir, f"{alpha_id}.csv")
+        if os.path.isfile(alpha_pnl_file_path):
+            log.info(f'PnL for {alpha_id} exists...')
+        else:
+            log.info(f'Alpha PnL file for {alpha_id} not found. Generating new PnL data...')
+            result_obj = WQAlpha()
+            alpha_pnl = result_obj.get_single_alpha_pnl(alpha_id)
+            alpha_pnl.to_csv(alpha_pnl_file_path, index=False)
 
 
 if __name__ == "__main__":

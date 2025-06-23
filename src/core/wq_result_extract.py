@@ -81,8 +81,6 @@ class WQAlpha(WQSession):
 
         return pd.concat(ls_pnl)
 
-
-
     def get_single_alpha_pnl(self, alpha_id=None):
         if alpha_id is None:
             alpha_id = self.alpha_id
